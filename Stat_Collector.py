@@ -5,39 +5,67 @@ import requests
 import pandas as pd
 import sys
 
-def StatGrab(player_name):
-    _URL = "https://www.basketball-reference.com/players/"
+class Data:
 
-    inv_player_name = player_name.lower().split(" ")[::-1]
+    class player:
+        
+        def __init__(self, player_name):
+            self.player_name = player_name
+            self._URL = "https://www.basketball-reference.com/players/"
+            
+        def fetch(self, **kwargs):
+            #flip the player's name (e.g. "Michael Jordan" -> ["Jordan", "Michael"])
+            inv_player_name = self.player_name.lower().split(" ")[::-1]
+            
+            #create an url extension from the player name ("j/jordami01.html")
+            player_tag = inv_player_name[0][0]+"/"+inv_player_name[0][0:5]+inv_player_name[1][0:2]+"01.html"
 
-    player_tag = inv_player_name[0][0]+"/"+inv_player_name[0][0:5]+inv_player_name[1][0:2]+"01.html"
+            #create the full url ("https://www.basketball-reference.com/players/j/jordami01.html")
+            _FULL_URL = self._URL + player_tag
 
-    _FULL_URL = _URL + player_tag
+            #make a request to the page and report status of response
+            response = requests.get(_FULL_URL)
+            print("<status: "+str(response.status_code)+">")
 
-    response = requests.get(_FULL_URL)
+            #parse the raw html
+            soup = bs(response.content, "html.parser")
 
-    if response.status_code == 200:
-        print("Data Accessed Successfully")
-    else:
-        print("Problem Accessing Data")
+            #find all the tables
+            tables = soup.findAll("div", {"class": "table_wrapper"})
 
-    soup = bs(response.content, "html.parser")
+            #find the schema for the data table
+            schema = list(set([d.get("data-stat") for d in tables[0].findAll("td")]))
 
-    stats = dict.fromkeys( list( set( stat.get("data-stat") for stat in soup.findAll("td") ) ), [] )
+            #initialize a dictionary of empty lists mapped to the schema
+            stats = {}
+            for s in schema:
+                stats[s] = []
+                
+            #add the data from each tag to the appropriate list
+            for d in tables[0].findAll("td"):
+                if str(d.string)[0].isdigit() or str(d.string)[0] == ".":
+                    value = float(d.string) 
+                else:
+                    value = d.string
+                
+                stats[d.get("data-stat")].append(value)
+                
+            #remove the last entry from the data (i.e. the b-ref's "Totals" row)
+            for s in schema:
+                stats[s].pop()
+                
+            #create a dataframe from data
+            stats_df = pd.DataFrame.from_dict(stats)
+        
+            #return dataframe, dropping rows where data has been aggregated (i.e. only return raw data)
+            return stats_df.dropna(subset=["age"])
 
-    for stat in soup.findAll("td"):
-        stats[stat.get("data-stat")] += [stat.get_text()]
-
-    return pd.DataFrame.from_dict(stats)
 
 
 def main():
-    player_name = str(input("Player Name: "))
-    stats_df = StatGrab(player_name)
-    print(stats_df)
+    name = input("Player Name: ")
+    player = Data.player(name).fetch()
+    print(player)
 
 if __name__ == "__main__":
     main()
-
-
-
